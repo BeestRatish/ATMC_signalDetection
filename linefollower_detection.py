@@ -2,123 +2,86 @@
 # coding=utf8
 import sys
 sys.path.append('/home/pi/TurboPi/')
-import cv2
 import time
-import math
 import signal
-import Camera
-import threading
-import numpy as np
-import yaml_handle
-import HiwonderSDK.Board as Board
 import HiwonderSDK.mecanum as mecanum
-import HiwonderSDK.FourInfrared as infrared
+import cv2
+import numpy as np
 
-range_rgb = {
-    'red': (0, 0, 255),
-    'blue': (255, 0, 0),
-    'green': (0, 255, 0),
-    'black': (0, 0, 0),
-    'white': (255, 255, 255),
-}
+if sys.version_info.major == 2:
+    print('Please run this program with python3!')
+    sys.exit(0)
 
-lab_data = {
-    'white': {'min': (0, 0, 200), 'max': (255, 50, 255)},
-    'black': {'min': (0, 0, 0), 'max': (255, 50, 50)},
-}
+print('''
+**********************************************************
+********************功能:小车前进例程 Function: Move Forward************************
+**********************************************************
+----------------------------------------------------------
+Official website:https://www.hiwonder.com
+Online mall:https://hiwonder.tmall.com
+----------------------------------------------------------
+Tips:
+ * 按下Ctrl+C可关闭此次程序运行，若失败请多次尝试！ Press Ctrl+C to exit the program, please try few more times if fail to exit!
+----------------------------------------------------------
+''')
 
-target_color = ('white', 'black')
+chassis = mecanum.MecanumChassis()
+start = True
 
-# Other code remains the same from your original code...
+# Function to detect green color in an image
+def detect_green(frame):
+    # Convert the frame from BGR to HSV color space
+    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-# Set the RGB color on the expansion board to match the detected color
-def set_rgb(color):
-    if color == "red":
-        Board.RGB.setPixelColor(0, Board.PixelColor(255, 0, 0))
-        Board.RGB.setPixelColor(1, Board.PixelColor(255, 0, 0))
-        Board.RGB.show()
-    elif color == "green":
-        Board.RGB.setPixelColor(0, Board.PixelColor(0, 255, 0))
-        Board.RGB.setPixelColor(1, Board.PixelColor(0, 255, 0))
-        Board.RGB.show()
-    elif color == "blue":
-        Board.RGB.setPixelColor(0, Board.PixelColor(0, 0, 255))
-        Board.RGB.setPixelColor(1, Board.PixelColor(0, 0, 255))
-        Board.RGB.show()
+    # Define the lower and upper bounds for green color in HSV
+    lower_green = np.array([40, 40, 40])
+    upper_green = np.array([80, 255, 255])
+
+    # Create a mask to isolate green color
+    mask = cv2.inRange(hsv_frame, lower_green, upper_green)
+
+    # Apply morphological operations to remove noise
+    mask = cv2.erode(mask, None, iterations=2)
+    mask = cv2.dilate(mask, None, iterations=2)
+
+    # Find contours in the mask
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Check if any contour (green area) is detected
+    if len(contours) > 0:
+        return True
     else:
-        Board.RGB.setPixelColor(0, Board.PixelColor(0, 0, 0))
-        Board.RGB.setPixelColor(1, Board.PixelColor(0, 0, 0))
-        Board.RGB.show()
+        return False
 
-# Find the maximum contour
-def getAreaMaxContour(contours):
-    contour_area_temp = 0
-    contour_area_max = 0
-    area_max_contour = None
+# Signal handler to stop the program
+def Stop(signum, frame):
+    global start
+    start = False
+    print('Closing...')
+    chassis.set_velocity(0, 0, 0)  # Turn off all motors
 
-    for c in contours:
-        contour_area_temp = math.fabs(cv2.contourArea(c))
-        if contour_area_temp > contour_area_max:
-            contour_area_max = contour_area_temp
-            if contour_area_temp > 300:
-                area_max_contour = c
-
-    return area_max_contour, contour_area_max
-
-# Other functions and main code remain the same...
-
-# Initialize the app
-def init():
-    print("LineFollower Init")
-    load_config()
-    reset()
-    initMove()
-
-# Start the app
-def start():
-    global __isRunning
-    reset()
-    __isRunning = True
-    car.set_velocity(35, 90, 0)
-    print("LineFollower Start")
-
-# Stop the app
-def stop():
-    global car_stop
-    global __isRunning
-    car_stop = True
-    __isRunning = False
-    set_rgb('None')
-    print("LineFollower Stop")
-
-# Exit the app
-def exit():
-    global car_stop
-    global __isRunning
-    car_stop = True
-    __isRunning = False
-    set_rgb('None')
-    print("LineFollower Exit")
-
-# Other code remains the same...
+# Set up signal handling
+signal.signal(signal.SIGINT, Stop)
 
 if __name__ == '__main__':
-    init()
-    start()
-    camera = Camera.Camera()
-    camera.camera_open(correction=True)
-    signal.signal(signal.SIGINT, manualcar_stop)
-    while __isRunning:
-        img = camera.frame
-        if img is not None:
-            frame = img.copy()
-            Frame = run(frame)
-            frame_resize = cv2.resize(Frame, (320, 240))
-            cv2.imshow('frame', frame_resize)
-            key = cv2.waitKey(1)
-            if key == 27:
-                break
+    cap = cv2.VideoCapture(0)  # Open the default camera (usually camera index 0)
+
+    while start:
+        ret, frame = cap.read()  # Read a frame from the camera
+
+        if not ret:
+            print('Error capturing frame')
+            break
+
+        # Check if green color is detected in the frame
+        if detect_green(frame):
+            chassis.set_velocity(50, 90, 0)  # Move forward if green color is detected
         else:
-            time.sleep(0.01)
-    camera.camera_close()
-    cv2.destroyAllWindows()
+            chassis.set_velocity(0, 0, 0)  # Stop if green color is not detected
+
+        time.sleep(0.1)  # Wait for a short duration between frame processing
+
+    chassis.set_velocity(0, 0, 0)  # Turn off all motors
+    print('Closed')
+    cap.release()  # Release the camera
+    cv2.destroyAllWindows()  # Close OpenCV windows
