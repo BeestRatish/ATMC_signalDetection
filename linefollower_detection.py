@@ -1,45 +1,73 @@
+#!/usr/bin/python3
+# coding=utf8
+
 import cv2
+import time
+import HiwonderSDK.Board as Board
+import HiwonderSDK.FourInfrared as infrared
+import HiwonderSDK.Sonar as Sonar
 
-# Load the Haar cascade classifiers
-stop_cascade = cv2.CascadeClassifier('stop_sign.xml')
-light_cascade = cv2.CascadeClassifier('traffic_light.xml')
+# Initialize ultrasonic sensor
+sonar = Sonar.Sonar()
 
-# Initialize the camera (adjust camera index if needed)
-cap = cv2.VideoCapture(0)
+# Initialize infrared sensor
+line = infrared.FourInfrared()
 
+# Load cascade classifier for stop signs
+stop_sign_cascade = cv2.CascadeClassifier("stop_sign.xml")
+
+# Initialize camera
+camera = cv2.VideoCapture(0)
+
+# Global variables
+car_speed = 50
+obstacle_distance_threshold = (5, 10)  # Range of obstacle detection in cm
+stop_duration = 3  # Duration to stop in seconds
+
+# Function to control car movement
+def move_car(direction):
+    if direction == "Stop":
+        Board.setMotor(-car_speed, -car_speed, -car_speed, -car_speed)  # Stop the car
+        time.sleep(stop_duration)  # Stop for specified duration
+        Board.setMotor(car_speed, car_speed, car_speed, car_speed)  # Resume forward motion
+    elif direction == "Forward":
+        Board.setMotor(car_speed, car_speed, car_speed, car_speed)  # Move the car forward
+
+# Main loop
 while True:
-    ret, frame = cap.read()
+    ret, frame = camera.read()  # Read frame from camera
     if not ret:
+        print("Error: Unable to capture frame.")
         break
 
-    # Convert the frame to grayscale for detection
+    # Convert frame to grayscale for Haar cascade detection
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # Reduce frame resolution for faster processing
-    resized_frame = cv2.resize(gray, (0, 0), fx=0.5, fy=0.5)
-
     # Detect stop signs
-    stop_signs = stop_cascade.detectMultiScale(resized_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    stop_signs = stop_sign_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
 
-    # Detect traffic lights
-    lights = light_cascade.detectMultiScale(resized_frame, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    if len(stop_signs) > 0:
+        # Stop if a stop sign is detected
+        move_car("Stop")
+    else:
+        # Measure distance using ultrasonic sensor
+        distance = sonar.getDistance() / 10.0  # Distance in cm
 
-    # Draw rectangles around detected stop signs and traffic lights
-    for (x, y, w, h) in stop_signs:
-        cv2.rectangle(frame, (2*x, 2*y), (2*(x+w), 2*(y+h)), (255, 0, 0), 2)
-        cv2.putText(frame, 'Stop Sign', (2*x, 2*y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 0, 0), 2)
+        if obstacle_distance_threshold[0] <= distance <= obstacle_distance_threshold[1]:
+            # Stop if an obstacle is detected within the threshold range
+            move_car("Stop")
+        else:
+            # Move the car forward if no stop sign or obstacle detected
+            move_car("Forward")
 
-    for (x, y, w, h) in lights:
-        cv2.rectangle(frame, (2*x, 2*y), (2*(x+w), 2*(y+h)), (0, 255, 0), 2)
-        cv2.putText(frame, 'Traffic Light', (2*x, 2*y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+    # Display the frame with detection results
+    cv2.imshow('Frame', frame)
 
-    # Display the resulting frame
-    cv2.imshow('Detection', frame)
-
-    # Exit on 'q' key press
+    # Exit loop if 'q' is pressed
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Release the capture and close windows
-cap.release()
+# Release resources
+camera.release()
 cv2.destroyAllWindows()
+Board.setMotor(0, 0, 0, 0)  # Stop the car
