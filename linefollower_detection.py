@@ -1,15 +1,22 @@
 #!/usr/bin/python3
-import signal
-import time
-from gpiozero import DistanceSensor
+# coding=utf8
+import sys
+sys.path.append('/home/pi/TurboPi/')
 import cv2
+import time
+import signal
+import threading
 import numpy as np
-import HiwonderSDK.mecanum as mecanum
+import yaml_handle
 import HiwonderSDK.Board as Board
+import HiwonderSDK.mecanum as mecanum
+import HiwonderSDK.FourInfrared as infrared
+import HiwonderSDK.Sonar as Sonar
+import pandas as pd
 
 # Initialize hardware components
-chassis = mecanum.MecanumChassis()
-sensor = DistanceSensor(echo=18, trigger=17)  # Adjust GPIO pins according to board specs
+car = mecanum.MecanumChassis()
+sonar = Sonar.Sonar()
 Board.RGB.setup(Board.RGB.RGB_BOARD)  # Setup RGB LED
 
 # Load Haar cascade classifiers
@@ -20,7 +27,7 @@ light_cascade = cv2.CascadeClassifier('traffic_light.xml')  # Path to traffic li
 # Handle program exit
 def stop_program(signum, frame):
     print("Closing...")
-    chassis.set_velocity(0, 90, 0)  # Stop the robot
+    car.set_velocity(0, 90, 0)  # Stop the car
     Board.RGB.setPixelColor(0, Board.PixelColor(0, 0, 0))  # Turn off RGB LED
     exit(0)
 
