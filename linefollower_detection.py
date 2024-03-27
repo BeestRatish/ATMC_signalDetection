@@ -71,13 +71,10 @@ if __name__ == '__main__':
         if green_light_detected and not obstacle_detected:
             chassis.set_velocity(50, 90, 0)  # Move forward
         else:
-            chassis.set_velocity(0, 0, 0)  # Stop
+            chassis.set_velocity(0, 0, 0)  # Stop if obstacle detected
 
         cv2.imshow('Camera Feed', frame)  # Display the camera feed
-
-        key = cv2.waitKey(1)
-        if key == 27:  # Press ESC to exit
-            break
+        cv2.waitKey(1)  # Process events without delaying
 
     chassis.set_velocity(0, 0, 0)  # 关闭所有电机 Turn off all motors
     print('Closed')
