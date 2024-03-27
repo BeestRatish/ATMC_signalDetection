@@ -1,80 +1,67 @@
 #!/usr/bin/python3
-# coding=utf8
-import sys
-sys.path.append('/home/pi/TurboPi/')
+import signal
+import time
+from gpiozero import DistanceSensor
 import cv2
 import numpy as np
-import time
-import signal
 import HiwonderSDK.mecanum as mecanum
-import HiwonderSDK.Sonar as Sonar
+import HiwonderSDK.Board as Board
 
-if sys.version_info.major == 2:
-    print('Please run this program with python3!')
-    sys.exit(0)
-
-print('''
-**********************************************************
-********************功能:小车前进例程 Function: Move Forward************************
-**********************************************************
-----------------------------------------------------------
-Official website: https://www.hiwonder.com
-Online mall: https://hiwonder.tmall.com
-----------------------------------------------------------
-Tips:
- * 按下Ctrl+C可关闭此次程序运行，若失败请多次尝试！ Press Ctrl+C to exit the program, please try few more times if fail to exit!
-----------------------------------------------------------
-''')
-
+# Initialize hardware components
 chassis = mecanum.MecanumChassis()
-sonar = Sonar.Sonar()
+sensor = DistanceSensor(echo=18, trigger=17)  # Adjust GPIO pins according to board specs
+Board.RGB.setup(Board.RGB.RGB_BOARD)  # Setup RGB LED
 
-cap = cv2.VideoCapture(0)  # Open the default camera (index 0)
+# Load Haar cascade classifiers
+stop_cascade = cv2.CascadeClassifier('stop_sign.xml')  # Path to stop sign cascade XML
+light_cascade = cv2.CascadeClassifier('traffic_light.xml')  # Path to traffic light cascade XML
 
-start = True
 
-#关闭前处理 Processing before exit
-def Stop(signum, frame):
-    global start
+# Handle program exit
+def stop_program(signum, frame):
+    print("Closing...")
+    chassis.set_velocity(0, 90, 0)  # Stop the robot
+    Board.RGB.setPixelColor(0, Board.PixelColor(0, 0, 0))  # Turn off RGB LED
+    exit(0)
 
-    start = False
-    print('closing...')
-    chassis.set_velocity(0, 90, 0)  # 关闭所有电机 Turn off all motors
-    sonar.close()  # Close the ultrasonic sensor
-    cap.release()  # Release the camera
-    cv2.destroyAllWindows()  # Close OpenCV windows
 
-signal.signal(signal.SIGINT, Stop)
+signal.signal(signal.SIGINT, stop_program)
 
-def detect_green_light(frame):
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    lower_green = np.array([40, 40, 40])
-    upper_green = np.array([80, 255, 255])
-    mask = cv2.inRange(hsv, lower_green, upper_green)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    return len(contours) > 0
 
-def detect_obstacle():
-    distance = sonar.get_distance() / 10.0  # Convert to centimeters
-    return distance < 10  # Adjust threshold as needed
+# Function to detect stop signs and traffic lights in the frame
+def detect_objects(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-if __name__ == '__main__':
-    while start:
-        ret, frame = cap.read()  # Read a frame from the camera
+    # Detect stop signs
+    stops = stop_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+    for (x, y, w, h) in stops:
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+        print("Stop sign detected!")
+
+    # Detect traffic lights
+    lights = light_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(20, 20))
+    for (x, y, w, h) in lights:
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        print("Traffic light detected!")
+
+    return frame
+
+
+# Main program loop
+if __name__ == "__main__":
+    cap = cv2.VideoCapture(0)  # Open the default camera (index 0)
+    while True:
+        ret, frame = cap.read()
         if not ret:
             print("Error: Failed to capture frame")
             break
 
-        green_light_detected = detect_green_light(frame)
-        obstacle_detected = detect_obstacle()
+        # Detect objects in the frame
+        detected_frame = detect_objects(frame)
 
-        if green_light_detected and not obstacle_detected:
-            chassis.set_velocity(50, 90, 0)  # Move forward
-        else:
-            chassis.set_velocity(0, 0, 0)  # Stop if obstacle detected
+        cv2.imshow('Object Detection', detected_frame)
+        if cv2.waitKey(1) == 27:  # Press ESC to exit
+            break
 
-        cv2.imshow('Camera Feed', frame)  # Display the camera feed
-        cv2.waitKey(1)  # Process events without delaying
-
-    chassis.set_velocity(0, 0, 0)  # 关闭所有电机 Turn off all motors
-    print('Closed')
+    cap.release()
+    cv2.destroyAllWindows()
