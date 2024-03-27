@@ -50,10 +50,10 @@ def filter_traffic_light(contours, frame):
     traffic_light_contours = []
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area > 100 and area < 1000:  # Adjust these values based on the expected size of the traffic light in pixels
+        if 100 < area < 1000:  # Adjust these values based on the expected size of the traffic light in pixels
             x, y, w, h = cv2.boundingRect(contour)
             aspect_ratio = float(w) / h
-            if aspect_ratio > 0.8 and aspect_ratio < 1.2:  # Adjust aspect ratio range based on the traffic light shape
+            if 0.8 < aspect_ratio < 1.2:  # Adjust aspect ratio range based on the traffic light shape
                 traffic_light_contours.append(contour)
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0),
                               2)  # Draw a green rectangle around the detected traffic light
@@ -85,7 +85,7 @@ if __name__ == '__main__':
         # Filter out non-traffic light green objects
         traffic_light_contours = filter_traffic_light(contours, frame)
 
-        if len(traffic_light_contours) > 0:
+        if traffic_light_contours:
             # Traffic light detected, move the car forward
             chassis.set_velocity(50, 90, 0)  # 控制机器人移动函数,线速度50(0~100)，方向角90(0~360)，偏航角速度0(-2~2)
         else:
